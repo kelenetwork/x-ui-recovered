@@ -12,6 +12,9 @@ DEFAULT_BRANCH="main"
 TARBALL_URL="${REPO_URL}/archive/refs/heads/${DEFAULT_BRANCH}.tar.gz"
 REPO_DIR=""
 BOOTSTRAP_TMPDIR="${X_UI_INSTALL_BOOTSTRAP_TMPDIR:-}"
+PREINSTALL_HAS_DB=0
+PREINSTALL_HAS_INSTALL_INFO=0
+PREINSTALL_HAS_ORIGINAL_MENU=0
 
 log() {
     printf '[x-ui-install] %s\n' "$*"
@@ -119,11 +122,26 @@ bootstrap_from_tarball() {
     die "failed to execute downloaded install.sh"
 }
 
+
+capture_existing_state() {
+    if [[ -f "${DATA_DIR}/x-ui.db" ]]; then
+        PREINSTALL_HAS_DB=1
+    fi
+
+    if [[ -f "${DATA_DIR}/install-info.txt" ]]; then
+        PREINSTALL_HAS_INSTALL_INFO=1
+    fi
+
+    if [[ -f "${COMMAND_FILE}" ]] && grep -q 'X-UI Admin Management Script' "${COMMAND_FILE}"; then
+        PREINSTALL_HAS_ORIGINAL_MENU=1
+    fi
+}
+
 install_files() {
     [[ -x "${REPO_DIR}/recovered/usr-local-x-ui/x-ui" ]] || die "missing recovered panel binary"
     [[ -x "${REPO_DIR}/recovered/usr-local-x-ui/bin/xray-linux-amd64" ]] || die "missing recovered xray binary"
     [[ -f "${REPO_DIR}/systemd/x-ui.service" ]] || die "missing systemd/x-ui.service"
-    [[ -f "${REPO_DIR}/scripts/x-ui" ]] || die "missing scripts/x-ui"
+    [[ -f "${REPO_DIR}/recovered/usr-bin/x-ui" ]] || die "missing recovered /usr/bin/x-ui wrapper"
 
     install -d -m 0755 "${INSTALL_DIR}"
     cp -a "${REPO_DIR}/recovered/usr-local-x-ui/." "${INSTALL_DIR}/"
@@ -132,9 +150,90 @@ install_files() {
 
     install -d -m 0700 "${DATA_DIR}"
     install -m 0644 "${REPO_DIR}/systemd/x-ui.service" "${SERVICE_FILE}"
-    install -m 0755 "${REPO_DIR}/scripts/x-ui" "${COMMAND_FILE}"
+    install -m 0755 "${REPO_DIR}/recovered/usr-bin/x-ui" "${COMMAND_FILE}"
 
     chmod 0755 "${INSTALL_DIR}/x-ui" "${INSTALL_DIR}/x-ui.sh" "${INSTALL_DIR}/bin/xray-linux-amd64" "${COMMAND_FILE}"
+}
+
+
+random_alnum() {
+    local length="$1"
+    local value=""
+    local chunk=""
+
+    while [[ ${#value} -lt ${length} ]]; do
+        chunk="$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c "$((length - ${#value}))" || true)"
+        value="${value}${chunk}"
+    done
+
+    printf '%s\n' "${value}"
+}
+
+random_port() {
+    local port
+    while :; do
+        port=$((RANDOM % 45535 + 20000))
+        if ! ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq ":${port}$"; then
+            printf '%s\n' "${port}"
+            return 0
+        fi
+    done
+}
+
+initialize_secure_panel() {
+    local username password web_base_path panel_port
+    local info_file="${DATA_DIR}/install-info.txt"
+
+    if [[ "${X_UI_SKIP_SECURE_INIT:-0}" == "1" ]]; then
+        log "skip initial panel randomization because X_UI_SKIP_SECURE_INIT=1"
+        return 0
+    fi
+
+    if [[ "${X_UI_FORCE_SECURE_INIT:-0}" != "1" ]]; then
+        if [[ "${PREINSTALL_HAS_INSTALL_INFO}" == "1" || -f "${info_file}" ]]; then
+            log "initial panel settings already exist at ${info_file}; skip randomization"
+            log "set X_UI_FORCE_SECURE_INIT=1 to regenerate username/password/path/port"
+            return 0
+        fi
+
+        if [[ "${PREINSTALL_HAS_DB}" == "1" && "${PREINSTALL_HAS_ORIGINAL_MENU}" == "1" ]]; then
+            log "existing original x-ui installation detected; keep current panel settings"
+            log "set X_UI_FORCE_SECURE_INIT=1 to regenerate username/password/path/port"
+            return 0
+        fi
+    fi
+
+    username="${X_UI_USERNAME:-$(random_alnum 10)}"
+    password="${X_UI_PASSWORD:-$(random_alnum 18)}"
+    web_base_path="${X_UI_WEB_BASE_PATH:-$(random_alnum 12)}"
+    panel_port="${X_UI_PORT:-$(random_port)}"
+
+    "${INSTALL_DIR}/x-ui" setting \
+        -username "${username}" \
+        -password "${password}" \
+        -webBasePath "${web_base_path}" \
+        -port "${panel_port}" >/dev/null
+
+    cat >"${info_file}" <<EOF
+x-ui initial panel settings
+Generated at: $(date -Is)
+
+Port: ${panel_port}
+Web Base Path: ${web_base_path}
+Username: ${username}
+Password: ${password}
+
+Use 'x-ui settings' to show current panel settings.
+Use 'X_UI_FORCE_SECURE_INIT=1 bash <(curl -Ls https://raw.githubusercontent.com/kelenetwork/x-ui-recovered/main/install.sh)' to regenerate these values.
+EOF
+    chmod 0600 "${info_file}"
+
+    log "initial panel settings generated"
+    log "port: ${panel_port}"
+    log "web base path: ${web_base_path}"
+    log "username: ${username}"
+    log "password: ${password}"
+    log "saved initial settings to ${info_file} (mode 600)"
 }
 
 enable_service() {
@@ -149,10 +248,12 @@ main() {
     fi
 
     require_root
+    capture_existing_state
     install_files
+    initialize_secure_panel
     enable_service
     log "installed ${APP_NAME} to ${INSTALL_DIR}"
-    log "use 'x-ui status' or 'x-ui settings' to inspect the panel"
+    log "use 'x-ui' for the original interactive menu, or 'x-ui settings' to inspect the panel"
 }
 
 main "$@"

@@ -27,7 +27,7 @@ cp -a "${REPO_DIR}/recovered/usr-local-x-ui/." "${INSTALL_DIR}/"
 rm -f "${INSTALL_DIR}/bin/config.json"
 chown -R root:root "${INSTALL_DIR}"
 install -m 0644 "${REPO_DIR}/systemd/x-ui.service" "${SERVICE_FILE}"
-install -m 0755 "${REPO_DIR}/scripts/x-ui" "${COMMAND_FILE}"
+install -m 0755 "${REPO_DIR}/recovered/usr-bin/x-ui" "${COMMAND_FILE}"
 chmod 0755 "${INSTALL_DIR}/x-ui" "${INSTALL_DIR}/x-ui.sh" "${INSTALL_DIR}/bin/xray-linux-amd64" "${COMMAND_FILE}"
 
 systemctl daemon-reload

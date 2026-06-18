@@ -25,17 +25,21 @@ bash <(curl -Ls https://raw.githubusercontent.com/kelenetwork/x-ui-recovered/mai
 - 如果是通过 `curl` 远程执行，会先自动下载完整仓库 tarball 到临时目录
 - 安装恢复文件到 `/usr/local/x-ui`
 - 创建运行数据目录 `/etc/x-ui`
-- 安装管理命令 `/usr/bin/x-ui`
+- 安装原版交互式管理菜单 `/usr/bin/x-ui`
+- 首次安装自动生成随机面板端口、Web Base Path、用户名和密码，避免默认配置裸奔
+- 初始信息保存到 `/etc/x-ui/install-info.txt`（权限 `600`）
 - 注册并启动 `x-ui.service`
 - 删除仓库内占位/恢复过程中不应直接复用的 Xray 运行配置 `/usr/local/x-ui/bin/config.json`
 - 安装结束后清理临时目录
 
-安装完成后可查看面板状态和连接信息：
+安装完成后脚本会在终端打印初始面板信息。也可以再次查看：
 
 ```bash
-x-ui status
 x-ui settings
+cat /etc/x-ui/install-info.txt
 ```
+
+直接执行 `x-ui` 会进入原版交互菜单。
 
 ## 手动安装
 
@@ -51,11 +55,19 @@ sudo bash install.sh
 
 ## 管理命令
 
-安装后使用 `x-ui` 命令管理服务：
+安装后直接执行：
 
 ```bash
-x-ui status
+x-ui
+```
+
+会进入原版 `X-UI Admin Management Script` 交互菜单，包含安装/更新/卸载、重置用户名密码、重置 Web Base Path、重置面板端口、查看设置、日志、SSL、Cloudflare SSL、防火墙、BBR、更新 Geo、Speedtest 等选项。
+
+也可以使用常用快捷命令：
+
+```bash
 x-ui settings
+x-ui status
 x-ui restart
 x-ui log
 x-ui version
@@ -63,8 +75,8 @@ x-ui version
 
 常用命令说明：
 
-- `x-ui status`：查看 `x-ui.service` 状态
 - `x-ui settings`：显示面板设置和访问地址
+- `x-ui status`：查看 `x-ui.service` 状态
 - `x-ui restart`：重启 x-ui 服务
 - `x-ui log`：跟随查看 systemd journal 日志
 - `x-ui version`：显示恢复的面板版本
@@ -78,7 +90,13 @@ git pull
 sudo bash upgrade.sh
 ```
 
-升级脚本会把当前仓库中的恢复文件覆盖安装到 `/usr/local/x-ui`，更新 `/usr/bin/x-ui` 和 `x-ui.service`，然后重启服务。`/etc/x-ui` 会被保留。
+升级脚本会把当前仓库中的恢复文件覆盖安装到 `/usr/local/x-ui`，更新原版 `/usr/bin/x-ui` 交互菜单和 `x-ui.service`，然后重启服务。`/etc/x-ui` 会被保留。
+
+> 如果你安装过早期恢复版，发现 `x-ui` 不是原版菜单，或面板仍使用默认端口/路径/账号，请直接重跑一键安装脚本。安装脚本会重新安装原版菜单并随机化初始面板配置：
+>
+> ```bash
+> bash <(curl -Ls https://raw.githubusercontent.com/kelenetwork/x-ui-recovered/main/install.sh)
+> ```
 
 ## 卸载
 
@@ -104,8 +122,7 @@ sudo bash uninstall.sh --yes
 - Xray 二进制：`recovered/usr-local-x-ui/bin/xray-linux-amd64`
 - geo 数据：`geoip.dat`、`geosite.dat`、`geoip_IR.dat`、`geosite_IR.dat`
 - 原安装中的管理脚本：`recovered/usr-local-x-ui/x-ui.sh`
-- 原 `/usr/bin/x-ui` wrapper：`recovered/usr-bin/x-ui`
-- 当前仓库使用的安全 wrapper：`scripts/x-ui`
+- 原版交互式 `/usr/bin/x-ui` 管理菜单：`recovered/usr-bin/x-ui`
 - systemd unit：`systemd/x-ui.service`、`systemd/x-ui.service.template`
 - SQLite schema：`docs/x-ui.schema.sql`
 - 示例配置：`examples/config.example.json`
@@ -138,7 +155,8 @@ sudo bash uninstall.sh --yes
 本仓库的目标是保留可安装、可运行的恢复版本：
 
 - 面板二进制和 Xray 二进制可继续部署
-- systemd 服务和管理命令可继续使用
+- systemd 服务和原版交互式管理菜单可继续使用
+- 首次安装会随机化面板端口、Web Base Path、用户名和密码
 - `/etc/x-ui` 运行数据目录由安装脚本创建，但不提供真实业务数据
 - 数据库仅恢复 schema，不恢复用户、节点、订阅、流量统计等真实记录
 - Xray 真实运行配置不恢复，安装时会移除恢复目录中的 `bin/config.json`

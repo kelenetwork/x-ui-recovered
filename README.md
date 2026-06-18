@@ -20,8 +20,6 @@
 bash <(curl -Ls https://raw.githubusercontent.com/kelenetwork/x-ui-recovered/main/install.sh)
 ```
 
-> 注意：上面的 raw 一键命令要求仓库是 **Public**，否则未登录机器会拿到 GitHub `404: Not Found`。如果仓库保持 Private，请先在目标机器完成 GitHub 认证后 `git clone`，再使用下面的“手动安装”。
-
 一键脚本会执行以下操作：
 
 - 如果是通过 `curl` 远程执行，会先自动下载完整仓库 tarball 到临时目录

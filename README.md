@@ -1,59 +1,55 @@
-# x-ui Recovered Binary Install Repository
+# x-ui Recovered
 
-This repository was recovered from an installed `x-ui` deployment on
-`kele.com` on 2026-06-19 GMT+8. It is intended to keep the service installable
-after the referenced upstream repository became unavailable.
+`x-ui Recovered` 是一个 x-ui recovered binary install repository，用于在原 Go 源码不可用的情况下，继续一键安装并运行同版本 x-ui。
 
-Important: the original Go source code was not present on the server. The panel
-binary is a stripped Linux x86-64 executable, so the source cannot be fully
-reconstructed from it. This is a binary-based recovery repository.
+> 重要提示：本仓库不是完整源码仓库。服务器上没有找到原 Go 源码，恢复得到的 `x-ui` 是 stripped Linux x86-64 binary，因此无法完整还原源码，也不能像源码项目一样修改后重新编译。
 
-## What Was Recovered
+当前恢复版本：
 
-- x-ui panel binary: `recovered/usr-local-x-ui/x-ui`
-- x-ui version reported by binary: `1.10.2`
-- xray binary: `recovered/usr-local-x-ui/bin/xray-linux-amd64`
-- xray version: `26.2.6`
-- geo data files under `recovered/usr-local-x-ui/bin/`
-- recovered management scripts:
-  - `recovered/usr-local-x-ui/x-ui.sh`
-  - `recovered/usr-bin/x-ui`
-- systemd unit:
-  - `systemd/x-ui.service`
-  - `systemd/x-ui.service.template`
-- SQLite schema only: `docs/x-ui.schema.sql`
+- x-ui：`1.10.2`
+- Xray：`26.2.6`
+- GitHub：<https://github.com/kelenetwork/x-ui-recovered>
 
-## Sensitive Data Policy
+## 🚀 快速开始
 
-The recovery intentionally does not include real runtime data:
+### 一键安装（推荐）
 
-- no `/etc/x-ui/x-ui.db`
-- no `/usr/local/x-ui/bin/config.json`
-- no certificates or private keys
-- no panel usernames/passwords
-- no subscription data or access logs
-
-`examples/config.example.json` is a placeholder example, not the remote host's
-live configuration.
-
-## Install
-
-Run on a Debian/Ubuntu-style system with `systemd`:
+在 Debian/Ubuntu 等使用 `systemd` 的 Linux x86-64 服务器上，以 `root` 或具备 `sudo` 权限的用户执行：
 
 ```bash
+bash <(curl -Ls https://raw.githubusercontent.com/kelenetwork/x-ui-recovered/main/install.sh)
+```
+
+一键脚本会执行以下操作：
+
+- 安装恢复文件到 `/usr/local/x-ui`
+- 创建运行数据目录 `/etc/x-ui`
+- 安装管理命令 `/usr/bin/x-ui`
+- 注册并启动 `x-ui.service`
+- 删除仓库内占位/恢复过程中不应直接复用的 Xray 运行配置 `/usr/local/x-ui/bin/config.json`
+
+安装完成后可查看面板状态和连接信息：
+
+```bash
+x-ui status
+x-ui settings
+```
+
+## 手动安装
+
+如果希望先审查脚本再安装，可手动克隆仓库：
+
+```bash
+git clone https://github.com/kelenetwork/x-ui-recovered.git
+cd x-ui-recovered
 sudo bash install.sh
 ```
 
-The installer copies files to:
+安装脚本来自当前仓库的 `install.sh`，不会调用已失效或未知的上游安装地址。
 
-- `/usr/local/x-ui`
-- `/etc/systemd/system/x-ui.service`
-- `/usr/bin/x-ui`
-- `/etc/x-ui`
+## 管理命令
 
-It then enables and restarts `x-ui.service`.
-
-## Manage
+安装后使用 `x-ui` 命令管理服务：
 
 ```bash
 x-ui status
@@ -63,59 +59,92 @@ x-ui log
 x-ui version
 ```
 
-The original recovered wrapper is preserved under `recovered/usr-bin/x-ui`, but
-the installed wrapper from this repository is `scripts/x-ui`. It avoids calling
-the deleted upstream install URLs.
+常用命令说明：
 
-## Upgrade
+- `x-ui status`：查看 `x-ui.service` 状态
+- `x-ui settings`：显示面板设置和访问地址
+- `x-ui restart`：重启 x-ui 服务
+- `x-ui log`：跟随查看 systemd journal 日志
+- `x-ui version`：显示恢复的面板版本
 
-After replacing recovered artifacts in this repository with a newer trusted
-build:
+## 升级
+
+当本仓库中的恢复二进制、脚本或 systemd unit 已更新后，可在仓库目录执行：
 
 ```bash
+git pull
 sudo bash upgrade.sh
 ```
 
-The upgrade script copies repository files over the installed files and
-restarts `x-ui.service`. It preserves `/etc/x-ui`.
+升级脚本会把当前仓库中的恢复文件覆盖安装到 `/usr/local/x-ui`，更新 `/usr/bin/x-ui` 和 `x-ui.service`，然后重启服务。`/etc/x-ui` 会被保留。
 
-## Uninstall
+## 卸载
+
+交互式卸载：
 
 ```bash
 sudo bash uninstall.sh
 ```
 
-For non-interactive removal:
+非交互式卸载：
 
 ```bash
 sudo bash uninstall.sh --yes
 ```
 
-## Provenance
+卸载脚本会停止并禁用 `x-ui.service`，删除 `/usr/local/x-ui`、`/etc/x-ui`、`/etc/systemd/system/x-ui.service` 和 `/usr/bin/x-ui`。
 
-The recovered script referenced these upstream URLs:
+## 恢复内容
 
-- `https://raw.githubusercontent.com/alireza0/x-ui/main/install.sh`
-- `https://raw.githubusercontent.com/alireza0/x-ui/master/install.sh`
-- `https://github.com/alireza0/x-ui/raw/main/x-ui.sh`
+本仓库已恢复并整理以下内容：
 
-See `docs/recovery-report.md` for host details, discovered paths, hashes, and
-recovery scope.
+- x-ui 面板二进制：`recovered/usr-local-x-ui/x-ui`
+- Xray 二进制：`recovered/usr-local-x-ui/bin/xray-linux-amd64`
+- geo 数据：`geoip.dat`、`geosite.dat`、`geoip_IR.dat`、`geosite_IR.dat`
+- 原安装中的管理脚本：`recovered/usr-local-x-ui/x-ui.sh`
+- 原 `/usr/bin/x-ui` wrapper：`recovered/usr-bin/x-ui`
+- 当前仓库使用的安全 wrapper：`scripts/x-ui`
+- systemd unit：`systemd/x-ui.service`、`systemd/x-ui.service.template`
+- SQLite schema：`docs/x-ui.schema.sql`
+- 示例配置：`examples/config.example.json`
 
-## License
+完整恢复记录、路径和校验信息见：[docs/recovery-report.md](docs/recovery-report.md)。
 
-The x-ui panel binary and recovered x-ui shell scripts did not include a
-verifiable license in the recovered installation. Their license is currently
-unknown.
+## 敏感数据策略
 
-The bundled Xray component includes its recovered `README.md` and `LICENSE`
-under `recovered/usr-local-x-ui/bin/`; that license file is Mozilla Public
-License 2.0 for Xray-core.
+本仓库不包含真实运行敏感数据，也不应提交这些内容：
 
-Do not publish this as a formally open-source project until the original x-ui
-license is verified.
+- `/etc/x-ui/x-ui.db`
+- 真实 `/usr/local/x-ui/bin/config.json`
+- 证书和私钥
+- 面板账号、密码和登录信息
+- 订阅数据
+- 访问日志、运行日志和用户流量数据
 
-## Publishing
+`docs/x-ui.schema.sql` 仅包含 SQLite 表结构；`examples/config.example.json` 只是占位示例，不是原服务器的真实运行配置。
 
-This repository has only been initialized locally. Nothing has been pushed. A
-GitHub repository URL is required before adding a remote and pushing.
+## 源码说明 / 能不能二开
+
+可以继续使用本仓库安装和运行恢复出的同版本 x-ui，但不能把它当作完整源码项目进行二次开发。
+
+原因是服务器上没有找到原 Go 源码，`recovered/usr-local-x-ui/x-ui` 是 stripped Linux x86-64 binary。它可以被执行、安装和纳入 systemd 管理，但无法可靠恢复成可维护的 Go 源码，也不能像正常源码仓库一样修改后重新编译。
+
+如果需要二开，应寻找并确认原始上游源码及其 license，或迁移到具备明确源码和授权的替代项目。
+
+## 恢复范围
+
+本仓库的目标是保留可安装、可运行的恢复版本：
+
+- 面板二进制和 Xray 二进制可继续部署
+- systemd 服务和管理命令可继续使用
+- `/etc/x-ui` 运行数据目录由安装脚本创建，但不提供真实业务数据
+- 数据库仅恢复 schema，不恢复用户、节点、订阅、流量统计等真实记录
+- Xray 真实运行配置不恢复，安装时会移除恢复目录中的 `bin/config.json`
+
+## License / Notice
+
+x-ui panel binary 和 recovered scripts 未能从安装文件中确认 license，当前授权状态未知。公开传播、商用或重新分发前，应先确认原项目授权和相关依赖授权。
+
+Xray 组件随恢复文件保留了 license，位于 `recovered/usr-local-x-ui/bin/LICENSE`，对应 MPL-2.0 license。
+
+更多说明可参考仓库中的 `LICENSE.md`、`NOTICE.md` 和 [docs/recovery-report.md](docs/recovery-report.md)。

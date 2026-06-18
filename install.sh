@@ -1,259 +1,277 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-APP_NAME="x-ui"
-INSTALL_DIR="/usr/local/x-ui"
-DATA_DIR="/etc/x-ui"
-SERVICE_FILE="/etc/systemd/system/x-ui.service"
-COMMAND_FILE="/usr/bin/x-ui"
+red='\033[0;31m'
+green='\033[0;32m'
+yellow='\033[0;33m'
+plain='\033[0m'
+
+cur_dir=$(pwd)
+
+# check root
+[[ $EUID -ne 0 ]] && echo -e "${red}Fatal error: ${plain} Please run this script with root privilege \n " && exit 1
+
+# Check OS and set release variable
+if [[ -f /etc/os-release ]]; then
+    source /etc/os-release
+    release=$ID
+elif [[ -f /usr/lib/os-release ]]; then
+    source /usr/lib/os-release
+    release=$ID
+else
+    echo "Failed to check the system OS, please contact the author!" >&2
+    exit 1
+fi
+echo "The OS release is: $release"
+
+arch() {
+    case "$(uname -m)" in
+    x86_64 | x64 | amd64) echo 'amd64' ;;
+    i*86 | x86) echo '386' ;;
+    armv8* | armv8 | arm64 | aarch64) echo 'arm64' ;;
+    armv7* | armv7 | arm) echo 'armv7' ;;
+    armv6* | armv6) echo 'armv6' ;;
+    armv5* | armv5) echo 'armv5' ;;
+    s390x) echo 's390x' ;;
+    *) echo -e "${green}Unsupported CPU architecture! ${plain}" && rm -f install.sh && exit 1 ;;
+    esac
+}
+
+echo "arch: $(arch)"
+
+install_dependencies() {
+    case "${release}" in
+    ubuntu | debian | armbian)
+        apt-get update && apt-get install -y -q wget curl tar tzdata cron
+        ;;
+    centos | almalinux | rocky | ol)
+        yum -y update && yum install -y -q wget curl tar tzdata cronie
+        ;;
+    fedora | amzn)
+        dnf -y update && dnf install -y -q wget curl tar tzdata cronie
+        ;;
+    arch | manjaro | parch)
+        pacman -Syu && pacman -Syu --noconfirm wget curl tar tzdata cronie
+        ;;
+    opensuse-tumbleweed)
+        zypper refresh && zypper -q install -y wget curl tar timezone cron
+        ;;
+    *)
+        apt-get update && apt install -y -q wget curl tar tzdata cron
+        ;;
+    esac
+}
+
+gen_random_string() {
+    local length="$1"
+    local random_string=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | fold -w "$length" | head -n 1)
+    echo "$random_string"
+}
+
+config_after_install() {
+    local existing_username=$(/usr/local/x-ui/x-ui setting -show true | grep -Eo 'username: .+' | awk '{print $2}')
+    local existing_password=$(/usr/local/x-ui/x-ui setting -show true | grep -Eo 'password: .+' | awk '{print $2}')
+    local existing_webBasePath=$(/usr/local/x-ui/x-ui setting -show true | grep -Eo 'webBasePath: .+' | awk '{print $2}')
+
+    if [[ ${#existing_webBasePath} -lt 4 ]]; then
+        if [[ "$existing_username" == "admin" && "$existing_password" == "admin" ]]; then
+            local config_webBasePath=$(gen_random_string 15)
+            local config_username=$(gen_random_string 10)
+            local config_password=$(gen_random_string 10)
+
+            read -p "Would you like to customize the Panel Port settings? (If not, random port will be applied) [y/n]: " config_confirm
+            if [[ "${config_confirm}" == "y" || "${config_confirm}" == "Y" ]]; then
+                read -p "Please set up the panel port: " config_port
+                echo -e "${yellow}Your Panel Port is: ${config_port}${plain}"
+            else
+                local config_port=$(shuf -i 1024-62000 -n 1)
+                echo -e "${yellow}Generated random port: ${config_port}${plain}"
+            fi
+
+            /usr/local/x-ui/x-ui setting -username "${config_username}" -password "${config_password}" -port "${config_port}" -webBasePath "${config_webBasePath}"
+            echo -e "This is a fresh installation, generating random login info for security concerns:"
+            echo -e "###############################################"
+            echo -e "${green}Username: ${config_username}${plain}"
+            echo -e "${green}Password: ${config_password}${plain}"
+            echo -e "${green}Port: ${config_port}${plain}"
+            echo -e "${green}WebBasePath: ${config_webBasePath}${plain}"
+            echo -e "###############################################"
+            echo -e "${yellow}If you forgot your login info, you can type 'x-ui settings' to check${plain}"
+        else
+            local config_webBasePath=$(gen_random_string 15)
+            echo -e "${yellow}WebBasePath is missing or too short. Generating a new one...${plain}"
+            /usr/local/x-ui/x-ui setting -webBasePath "${config_webBasePath}"
+            echo -e "${green}New WebBasePath: ${config_webBasePath}${plain}"
+        fi
+    else
+        if [[ "$existing_username" == "admin" && "$existing_password" == "admin" ]]; then
+            local config_username=$(gen_random_string 10)
+            local config_password=$(gen_random_string 10)
+
+            echo -e "${yellow}Default credentials detected. Security update required...${plain}"
+            /usr/local/x-ui/x-ui setting -username "${config_username}" -password "${config_password}"
+            echo -e "Generated new random login credentials:"
+            echo -e "###############################################"
+            echo -e "${green}Username: ${config_username}${plain}"
+            echo -e "${green}Password: ${config_password}${plain}"
+            echo -e "###############################################"
+            echo -e "${yellow}If you forgot your login info, you can type 'x-ui settings' to check${plain}"
+        else
+            echo -e "${green}Username, Password, and WebBasePath are properly set. Exiting...${plain}"
+        fi
+    fi
+
+    /usr/local/x-ui/x-ui migrate
+}
+
+
 PROJECT_NAME="x-ui-recovered"
 REPO_URL="https://github.com/kelenetwork/x-ui-recovered"
 DEFAULT_BRANCH="main"
 TARBALL_URL="${REPO_URL}/archive/refs/heads/${DEFAULT_BRANCH}.tar.gz"
-REPO_DIR=""
-BOOTSTRAP_TMPDIR="${X_UI_INSTALL_BOOTSTRAP_TMPDIR:-}"
-PREINSTALL_HAS_DB=0
-PREINSTALL_HAS_INSTALL_INFO=0
-PREINSTALL_HAS_ORIGINAL_MENU=0
+RECOVERED_REPO_DIR=""
+RECOVERED_TMPDIR=""
 
-log() {
-    printf '[x-ui-install] %s\n' "$*"
-}
-
-die() {
-    printf '[x-ui-install] ERROR: %s\n' "$*" >&2
-    exit 1
-}
-
-cleanup_bootstrap_tmpdir() {
-    local tmpdir="${BOOTSTRAP_TMPDIR:-}"
-    local base
-
-    [[ -n "${tmpdir}" ]] || return 0
-    base="$(basename -- "${tmpdir}")"
-
-    if [[ "${base}" == x-ui-install.* && -f "${tmpdir}/.x-ui-install-bootstrap-tmp" ]]; then
-        rm -rf -- "${tmpdir}"
-    else
-        log "skip cleanup for unexpected bootstrap temp dir: ${tmpdir}"
-    fi
-}
-
-if [[ -n "${BOOTSTRAP_TMPDIR}" ]]; then
-    unset X_UI_INSTALL_BOOTSTRAP_TMPDIR
-    trap cleanup_bootstrap_tmpdir EXIT
-fi
-
-require_root() {
-    if [[ "${EUID}" -ne 0 ]]; then
-        die "run as root"
-    fi
-}
-
-has_repo_context() {
-    local dir="${1:-}"
-
-    [[ -n "${dir}" ]] || return 1
+has_recovered_repo() {
+    local dir="$1"
     [[ -x "${dir}/recovered/usr-local-x-ui/x-ui" ]] || return 1
+    [[ -x "${dir}/recovered/usr-local-x-ui/bin/xray-linux-amd64" ]] || return 1
+    [[ -f "${dir}/recovered/usr-bin/x-ui" ]] || return 1
     [[ -f "${dir}/systemd/x-ui.service" ]] || return 1
 }
 
-resolve_repo_dir() {
-    local source_path="${BASH_SOURCE[0]:-}"
-    local source_dir=""
-    local cwd_dir
+cleanup_recovered_tmpdir() {
+    if [[ -n "${RECOVERED_TMPDIR}" && -f "${RECOVERED_TMPDIR}/.x-ui-recovered-install" ]]; then
+        rm -rf "${RECOVERED_TMPDIR}"
+    fi
+}
 
-    if [[ -n "${source_path}" && -f "${source_path}" ]]; then
-        source_dir="$(cd -- "$(dirname -- "${source_path}")" 2>/dev/null && pwd -P)" || source_dir=""
-        if has_repo_context "${source_dir}"; then
-            REPO_DIR="${source_dir}"
+ensure_recovered_repo() {
+    local script_source="${BASH_SOURCE[0]:-}"
+    local script_dir=""
+
+    if [[ -n "${script_source}" && -f "${script_source}" ]]; then
+        script_dir="$(cd -- "$(dirname -- "${script_source}")" 2>/dev/null && pwd -P)" || script_dir=""
+        if [[ -n "${script_dir}" ]] && has_recovered_repo "${script_dir}"; then
+            RECOVERED_REPO_DIR="${script_dir}"
             return 0
         fi
     fi
 
-    cwd_dir="$(pwd -P)"
-    if has_repo_context "${cwd_dir}"; then
-        REPO_DIR="${cwd_dir}"
+    if has_recovered_repo "$(pwd -P)"; then
+        RECOVERED_REPO_DIR="$(pwd -P)"
         return 0
     fi
 
-    return 1
-}
+    command -v tar >/dev/null 2>&1 || { echo -e "${red}tar is required to unpack recovered package${plain}"; exit 1; }
+    command -v mktemp >/dev/null 2>&1 || { echo -e "${red}mktemp is required to create temporary directory${plain}"; exit 1; }
 
-download_tarball() {
-    local destination="$1"
+    RECOVERED_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/x-ui-recovered.XXXXXXXXXX")"
+    touch "${RECOVERED_TMPDIR}/.x-ui-recovered-install"
+    trap cleanup_recovered_tmpdir EXIT
 
+    echo -e "Got x-ui recovered package source: ${REPO_URL}, downloading..."
     if command -v curl >/dev/null 2>&1; then
-        curl -fL "${TARBALL_URL}" -o "${destination}"
+        curl -fL "${TARBALL_URL}" -o "${RECOVERED_TMPDIR}/source.tar.gz"
     elif command -v wget >/dev/null 2>&1; then
-        wget -O "${destination}" "${TARBALL_URL}"
+        wget -O "${RECOVERED_TMPDIR}/source.tar.gz" "${TARBALL_URL}"
     else
-        die "curl or wget is required to download ${REPO_URL}"
+        echo -e "${red}curl or wget is required to download recovered package${plain}"
+        exit 1
+    fi
+
+    tar -xzf "${RECOVERED_TMPDIR}/source.tar.gz" -C "${RECOVERED_TMPDIR}"
+    RECOVERED_REPO_DIR="${RECOVERED_TMPDIR}/${PROJECT_NAME}-${DEFAULT_BRANCH}"
+    if ! has_recovered_repo "${RECOVERED_REPO_DIR}"; then
+        echo -e "${red}Downloaded recovered package is incomplete${plain}"
+        exit 1
     fi
 }
 
-bootstrap_from_tarball() {
-    local archive
-    local extracted
-
-    command -v tar >/dev/null 2>&1 || die "tar is required to unpack ${TARBALL_URL}"
-    command -v mktemp >/dev/null 2>&1 || die "mktemp is required to create a temporary install directory"
-
-    BOOTSTRAP_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/x-ui-install.XXXXXXXXXX")"
-    touch "${BOOTSTRAP_TMPDIR}/.x-ui-install-bootstrap-tmp"
-    trap cleanup_bootstrap_tmpdir EXIT
-
-    archive="${BOOTSTRAP_TMPDIR}/source.tar.gz"
-    extracted="${BOOTSTRAP_TMPDIR}/${PROJECT_NAME}-${DEFAULT_BRANCH}"
-
-    log "repository files not found; downloading ${REPO_URL} (${DEFAULT_BRANCH})"
-    download_tarball "${archive}"
-    tar -xzf "${archive}" -C "${BOOTSTRAP_TMPDIR}"
-
-    [[ -f "${extracted}/install.sh" ]] || die "downloaded archive did not contain ${PROJECT_NAME}-${DEFAULT_BRANCH}/install.sh"
-    [[ -x "${extracted}/recovered/usr-local-x-ui/x-ui" ]] || die "downloaded archive did not contain recovered panel binary"
-    [[ -f "${extracted}/systemd/x-ui.service" ]] || die "downloaded archive did not contain systemd/x-ui.service"
-
-    export X_UI_INSTALL_BOOTSTRAP_TMPDIR="${BOOTSTRAP_TMPDIR}"
-    trap - EXIT
-    exec bash "${extracted}/install.sh" "$@"
-
-    cleanup_bootstrap_tmpdir
-    die "failed to execute downloaded install.sh"
-}
-
-
-capture_existing_state() {
-    if [[ -f "${DATA_DIR}/x-ui.db" ]]; then
-        PREINSTALL_HAS_DB=1
-    fi
-
-    if [[ -f "${DATA_DIR}/install-info.txt" ]]; then
-        PREINSTALL_HAS_INSTALL_INFO=1
-    fi
-
-    if [[ -f "${COMMAND_FILE}" ]] && grep -q 'X-UI Admin Management Script' "${COMMAND_FILE}"; then
-        PREINSTALL_HAS_ORIGINAL_MENU=1
-    fi
-}
-
-install_files() {
-    [[ -x "${REPO_DIR}/recovered/usr-local-x-ui/x-ui" ]] || die "missing recovered panel binary"
-    [[ -x "${REPO_DIR}/recovered/usr-local-x-ui/bin/xray-linux-amd64" ]] || die "missing recovered xray binary"
-    [[ -f "${REPO_DIR}/systemd/x-ui.service" ]] || die "missing systemd/x-ui.service"
-    [[ -f "${REPO_DIR}/recovered/usr-bin/x-ui" ]] || die "missing recovered /usr/bin/x-ui wrapper"
-
-    install -d -m 0755 "${INSTALL_DIR}"
-    cp -a "${REPO_DIR}/recovered/usr-local-x-ui/." "${INSTALL_DIR}/"
-    rm -f "${INSTALL_DIR}/bin/config.json"
-    chown -R root:root "${INSTALL_DIR}"
-
-    install -d -m 0700 "${DATA_DIR}"
-    install -m 0644 "${REPO_DIR}/systemd/x-ui.service" "${SERVICE_FILE}"
-    install -m 0755 "${REPO_DIR}/recovered/usr-bin/x-ui" "${COMMAND_FILE}"
-
-    chmod 0755 "${INSTALL_DIR}/x-ui" "${INSTALL_DIR}/x-ui.sh" "${INSTALL_DIR}/bin/xray-linux-amd64" "${COMMAND_FILE}"
-}
-
-
-random_alnum() {
-    local length="$1"
-    local value=""
-    local chunk=""
-
-    while [[ ${#value} -lt ${length} ]]; do
-        chunk="$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c "$((length - ${#value}))" || true)"
-        value="${value}${chunk}"
-    done
-
-    printf '%s\n' "${value}"
-}
-
-random_port() {
-    local port
-    while :; do
-        port=$((RANDOM % 45535 + 20000))
-        if ! ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq ":${port}$"; then
-            printf '%s\n' "${port}"
-            return 0
-        fi
-    done
-}
-
-initialize_secure_panel() {
-    local username password web_base_path panel_port
-    local info_file="${DATA_DIR}/install-info.txt"
-
-    if [[ "${X_UI_SKIP_SECURE_INIT:-0}" == "1" ]]; then
-        log "skip initial panel randomization because X_UI_SKIP_SECURE_INIT=1"
-        return 0
-    fi
-
-    if [[ "${X_UI_FORCE_SECURE_INIT:-0}" != "1" ]]; then
-        if [[ "${PREINSTALL_HAS_INSTALL_INFO}" == "1" || -f "${info_file}" ]]; then
-            log "initial panel settings already exist at ${info_file}; skip randomization"
-            log "set X_UI_FORCE_SECURE_INIT=1 to regenerate username/password/path/port"
-            return 0
-        fi
-
-        if [[ "${PREINSTALL_HAS_DB}" == "1" && "${PREINSTALL_HAS_ORIGINAL_MENU}" == "1" ]]; then
-            log "existing original x-ui installation detected; keep current panel settings"
-            log "set X_UI_FORCE_SECURE_INIT=1 to regenerate username/password/path/port"
-            return 0
+install_x-ui() {
+    # checks if the installation backup dir exist. if existed then ask user if they want to restore it else continue installation.
+    if [[ -e /usr/local/x-ui-backup/ ]]; then
+        read -p "Failed installation detected. Do you want to restore previously installed version? [y/n]? ": restore_confirm
+        if [[ "${restore_confirm}" == "y" || "${restore_confirm}" == "Y" ]]; then
+            systemctl stop x-ui >/dev/null 2>&1 || true
+            if [[ -f /usr/local/x-ui-backup/x-ui.db ]]; then
+                mkdir -p /etc/x-ui/
+                mv /usr/local/x-ui-backup/x-ui.db /etc/x-ui/ -f
+            fi
+            rm -rf /usr/local/x-ui/
+            mv /usr/local/x-ui-backup/ /usr/local/x-ui/ -f
+            systemctl start x-ui >/dev/null 2>&1 || true
+            echo -e "${green}previous installed x-ui restored successfully${plain}, it is up and running now..."
+            exit 0
+        else
+            echo -e "Continuing installing x-ui ..."
         fi
     fi
 
-    username="${X_UI_USERNAME:-$(random_alnum 10)}"
-    password="${X_UI_PASSWORD:-$(random_alnum 18)}"
-    web_base_path="${X_UI_WEB_BASE_PATH:-$(random_alnum 12)}"
-    panel_port="${X_UI_PORT:-$(random_port)}"
+    cd /usr/local/
 
-    "${INSTALL_DIR}/x-ui" setting \
-        -username "${username}" \
-        -password "${password}" \
-        -webBasePath "${web_base_path}" \
-        -port "${panel_port}" >/dev/null
+    if [[ $(arch) != "amd64" ]]; then
+        echo -e "${red}This recovered repository currently ships Linux amd64 binaries only.${plain}"
+        exit 1
+    fi
 
-    cat >"${info_file}" <<EOF
-x-ui initial panel settings
-Generated at: $(date -Is)
+    ensure_recovered_repo
 
-Port: ${panel_port}
-Web Base Path: ${web_base_path}
-Username: ${username}
-Password: ${password}
+    last_version="1.10.2"
+    if [ $# != 0 ]; then
+        echo -e "${yellow}Version argument '$1' was provided, but this recovered repository only ships x-ui ${last_version}.${plain}"
+    fi
+    echo -e "Got x-ui recovered version: ${last_version}, beginning the installation..."
 
-Use 'x-ui settings' to show current panel settings.
-Use 'X_UI_FORCE_SECURE_INIT=1 bash <(curl -Ls https://raw.githubusercontent.com/kelenetwork/x-ui-recovered/main/install.sh)' to regenerate these values.
-EOF
-    chmod 0600 "${info_file}"
+    if [[ -e /usr/local/x-ui/ ]]; then
+        systemctl stop x-ui >/dev/null 2>&1 || true
+        rm -rf /usr/local/x-ui-backup/
+        mv /usr/local/x-ui/ /usr/local/x-ui-backup/ -f
+        if [[ -f /etc/x-ui/x-ui.db ]]; then
+            cp /etc/x-ui/x-ui.db /usr/local/x-ui-backup/ -f
+        fi
+    fi
 
-    log "initial panel settings generated"
-    log "port: ${panel_port}"
-    log "web base path: ${web_base_path}"
-    log "username: ${username}"
-    log "password: ${password}"
-    log "saved initial settings to ${info_file} (mode 600)"
-}
+    mkdir -p /usr/local/x-ui/
+    cp -a "${RECOVERED_REPO_DIR}/recovered/usr-local-x-ui/." /usr/local/x-ui/
+    rm -f /usr/local/x-ui/bin/config.json
+    mkdir -p /etc/x-ui/
 
-enable_service() {
+    cd /usr/local/x-ui
+    chmod +x x-ui
+    chmod +x x-ui bin/xray-linux-amd64
+    cp -f "${RECOVERED_REPO_DIR}/systemd/x-ui.service" /etc/systemd/system/x-ui.service
+    install -m 0755 "${RECOVERED_REPO_DIR}/recovered/usr-bin/x-ui" /usr/bin/x-ui
+    chmod +x /usr/local/x-ui/x-ui.sh
+    chmod +x /usr/bin/x-ui
+    config_after_install
+    rm /usr/local/x-ui-backup/ -rf
     systemctl daemon-reload
-    systemctl enable "${APP_NAME}"
-    systemctl restart "${APP_NAME}"
+    systemctl enable x-ui
+    systemctl start x-ui
+    echo -e "${green}x-ui ${last_version}${plain} installation finished, it is up and running now..."
+    echo -e ""
+    echo -e "You may access the Panel with following URL(s):${yellow}"
+    /usr/local/x-ui/x-ui uri
+    echo -e "${plain}"
+    echo "X-UI Control Menu Usage"
+    echo "------------------------------------------"
+    echo "SUBCOMMANDS:"
+    echo "x-ui              - Admin Management Script"
+    echo "x-ui start        - Start"
+    echo "x-ui stop         - Stop"
+    echo "x-ui restart      - Restart"
+    echo "x-ui status       - Current Status"
+    echo "x-ui settings     - Current Settings"
+    echo "x-ui enable       - Enable Autostart on OS Startup"
+    echo "x-ui disable      - Disable Autostart on OS Startup"
+    echo "x-ui log          - Check Logs"
+    echo "x-ui update       - Update"
+    echo "x-ui install      - Install"
+    echo "x-ui uninstall    - Uninstall"
+    echo "x-ui help         - Control Menu Usage"
+    echo "------------------------------------------"
 }
 
-main() {
-    if ! resolve_repo_dir; then
-        bootstrap_from_tarball "$@"
-    fi
-
-    require_root
-    capture_existing_state
-    install_files
-    initialize_secure_panel
-    enable_service
-    log "installed ${APP_NAME} to ${INSTALL_DIR}"
-    log "use 'x-ui' for the original interactive menu, or 'x-ui settings' to inspect the panel"
-}
-
-main "$@"
+echo -e "${green}Running...${plain}"
+install_dependencies
+install_x-ui $1

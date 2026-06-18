@@ -20,23 +20,25 @@
 bash <(curl -Ls https://raw.githubusercontent.com/kelenetwork/x-ui-recovered/main/install.sh)
 ```
 
-一键脚本会执行以下操作：
+一键脚本会尽量保持原版 x-ui 的安装流程：
 
-- 如果是通过 `curl` 远程执行，会先自动下载完整仓库 tarball 到临时目录
-- 安装恢复文件到 `/usr/local/x-ui`
-- 创建运行数据目录 `/etc/x-ui`
-- 安装原版交互式管理菜单 `/usr/bin/x-ui`
-- 首次安装自动生成随机面板端口、Web Base Path、用户名和密码，避免默认配置裸奔
-- 初始信息保存到 `/etc/x-ui/install-info.txt`（权限 `600`）
-- 注册并启动 `x-ui.service`
-- 删除仓库内占位/恢复过程中不应直接复用的 Xray 运行配置 `/usr/local/x-ui/bin/config.json`
-- 安装结束后清理临时目录
+1. 检测系统和 CPU 架构
+2. 安装依赖（`wget` / `curl` / `tar` / `tzdata` / `cron` 等）
+3. 下载本仓库恢复包并安装到 `/usr/local/x-ui`
+4. 保留 `/etc/x-ui` 数据目录；重装时会先停止 `x-ui.service`，避免 `Text file busy`
+5. 安装原版交互式管理菜单 `/usr/bin/x-ui`
+6. 执行原版 `config_after_install` 初始化流程：
+   - 首次安装检测到默认 `admin/admin` 且 Web Base Path 为空/过短时，会询问是否自定义面板端口
+   - 选择 `y` 可手动输入端口
+   - 选择 `n` 会随机端口
+   - 用户名、密码、Web Base Path 按原版逻辑随机生成
+7. 注册并启动 `x-ui.service`
+8. 输出面板访问地址和 `x-ui` 管理命令说明
 
-安装完成后脚本会在终端打印初始面板信息。也可以再次查看：
+安装完成后可以查看当前设置：
 
 ```bash
 x-ui settings
-cat /etc/x-ui/install-info.txt
 ```
 
 直接执行 `x-ui` 会进入原版交互菜单。
@@ -92,7 +94,7 @@ sudo bash upgrade.sh
 
 升级脚本会把当前仓库中的恢复文件覆盖安装到 `/usr/local/x-ui`，更新原版 `/usr/bin/x-ui` 交互菜单和 `x-ui.service`，然后重启服务。`/etc/x-ui` 会被保留。
 
-> 如果你安装过早期恢复版，发现 `x-ui` 不是原版菜单，或面板仍使用默认端口/路径/账号，请直接重跑一键安装脚本。安装脚本会重新安装原版菜单并随机化初始面板配置：
+> 如果你安装过早期恢复版，发现 `x-ui` 不是原版菜单，或遇到 `Text file busy`，请直接重跑一键安装脚本。新脚本会先停止服务，再按原版流程重新安装并执行原版初始化逻辑：
 >
 > ```bash
 > bash <(curl -Ls https://raw.githubusercontent.com/kelenetwork/x-ui-recovered/main/install.sh)
@@ -156,7 +158,7 @@ sudo bash uninstall.sh --yes
 
 - 面板二进制和 Xray 二进制可继续部署
 - systemd 服务和原版交互式管理菜单可继续使用
-- 首次安装会随机化面板端口、Web Base Path、用户名和密码
+- 首次安装会按原版 `config_after_install` 逻辑处理默认账号、Web Base Path 和面板端口
 - `/etc/x-ui` 运行数据目录由安装脚本创建，但不提供真实业务数据
 - 数据库仅恢复 schema，不恢复用户、节点、订阅、流量统计等真实记录
 - Xray 真实运行配置不恢复，安装时会移除恢复目录中的 `bin/config.json`

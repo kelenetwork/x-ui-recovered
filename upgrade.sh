@@ -23,6 +23,7 @@ fi
 [[ -d "${INSTALL_DIR}" ]] || die "${INSTALL_DIR} does not exist; run install.sh first"
 [[ -x "${REPO_DIR}/recovered/usr-local-x-ui/x-ui" ]] || die "missing recovered panel binary"
 
+systemctl stop "${APP_NAME}" >/dev/null 2>&1 || true
 cp -a "${REPO_DIR}/recovered/usr-local-x-ui/." "${INSTALL_DIR}/"
 rm -f "${INSTALL_DIR}/bin/config.json"
 chown -R root:root "${INSTALL_DIR}"
@@ -31,5 +32,5 @@ install -m 0755 "${REPO_DIR}/recovered/usr-bin/x-ui" "${COMMAND_FILE}"
 chmod 0755 "${INSTALL_DIR}/x-ui" "${INSTALL_DIR}/x-ui.sh" "${INSTALL_DIR}/bin/xray-linux-amd64" "${COMMAND_FILE}"
 
 systemctl daemon-reload
-systemctl restart "${APP_NAME}"
+systemctl start "${APP_NAME}"
 log "upgraded files from this repository and restarted ${APP_NAME}"

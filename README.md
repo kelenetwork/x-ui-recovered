@@ -20,13 +20,17 @@
 bash <(curl -Ls https://raw.githubusercontent.com/kelenetwork/x-ui-recovered/main/install.sh)
 ```
 
+> 注意：上面的 raw 一键命令要求仓库是 **Public**，否则未登录机器会拿到 GitHub `404: Not Found`。如果仓库保持 Private，请先在目标机器完成 GitHub 认证后 `git clone`，再使用下面的“手动安装”。
+
 一键脚本会执行以下操作：
 
+- 如果是通过 `curl` 远程执行，会先自动下载完整仓库 tarball 到临时目录
 - 安装恢复文件到 `/usr/local/x-ui`
 - 创建运行数据目录 `/etc/x-ui`
 - 安装管理命令 `/usr/bin/x-ui`
 - 注册并启动 `x-ui.service`
 - 删除仓库内占位/恢复过程中不应直接复用的 Xray 运行配置 `/usr/local/x-ui/bin/config.json`
+- 安装结束后清理临时目录
 
 安装完成后可查看面板状态和连接信息：
 

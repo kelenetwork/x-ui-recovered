@@ -153,6 +153,7 @@ reset_user() {
     [[ -z $config_account ]] && config_account=$(gen_random_string 10)
     read -rp "Please set the login password [default is a random password]: " config_password
     [[ -z $config_password ]] && config_password=$(gen_random_string 18)
+    /usr/local/x-ui/x-ui setting -username "${config_account}" -password "${config_password}"
     
     echo -e "Panel login username has been reset to: ${green} ${config_account} ${plain}"
     echo -e "Panel login password has been reset to: ${green} ${config_password} ${plain}"
@@ -216,6 +217,9 @@ get_uri() {
     fi
     LOGI "You may access the Panel with following URL(s):"
     echo -e "${yellow}${info}${plain}"
+    if [[ $# == 0 ]]; then
+        before_show_menu
+    fi
 }
 
 set_port() {

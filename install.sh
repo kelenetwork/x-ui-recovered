@@ -41,22 +41,22 @@ echo "arch: $(arch)"
 install_dependencies() {
     case "${release}" in
     ubuntu | debian | armbian)
-        apt-get update && apt-get install -y -q wget curl tar tzdata cron
+        apt-get update && apt-get install -y -q wget curl tar tzdata cron ca-certificates nftables
         ;;
     centos | almalinux | rocky | ol)
-        yum -y update && yum install -y -q wget curl tar tzdata cronie
+        yum -y update && yum install -y -q wget curl tar tzdata cronie ca-certificates nftables
         ;;
     fedora | amzn)
-        dnf -y update && dnf install -y -q wget curl tar tzdata cronie
+        dnf -y update && dnf install -y -q wget curl tar tzdata cronie ca-certificates nftables
         ;;
     arch | manjaro | parch)
-        pacman -Syu && pacman -Syu --noconfirm wget curl tar tzdata cronie
+        pacman -Syu && pacman -Syu --noconfirm wget curl tar tzdata cronie ca-certificates nftables
         ;;
     opensuse-tumbleweed)
-        zypper refresh && zypper -q install -y wget curl tar timezone cron
+        zypper refresh && zypper -q install -y wget curl tar timezone cron ca-certificates nftables
         ;;
     *)
-        apt-get update && apt install -y -q wget curl tar tzdata cron
+        apt-get update && apt install -y -q wget curl tar tzdata cron ca-certificates nftables
         ;;
     esac
 }
@@ -245,6 +245,12 @@ install_x-ui() {
     chmod +x /usr/bin/x-ui
     config_after_install
     rm /usr/local/x-ui-backup/ -rf
+    #echo -e "If it is a new installation, the default web port is ${green}54321${plain}, The username and password are ${green}admin${plain} by default"
+    #echo -e "Please make sure that this port is not occupied by other procedures,${yellow} And make sure that port 54321 has been released${plain}"
+    #    echo -e "If you want to modify the 54321 to other ports and enter the x-ui command to modify it, you must also ensure that the port you modify is also released"
+    #echo -e ""
+    #echo -e "If it is updated panel, access the panel in your previous way"
+    #echo -e ""
     systemctl daemon-reload
     systemctl enable x-ui
     systemctl start x-ui

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_NAME="x-ui"
+BIN="/usr/local/x-ui/x-ui"
+
+usage() {
+    cat <<'USAGE'
+Usage: x-ui <command>
+
+Commands:
+  start          Start the x-ui service
+  stop           Stop the x-ui service
+  restart        Restart the x-ui service
+  restart-xray   Reload the x-ui service, which signals xray
+  status         Show systemd service status
+  settings       Show panel settings and URI
+  enable         Enable service autostart
+  disable        Disable service autostart
+  log            Follow x-ui journal logs
+  version        Show recovered panel version
+USAGE
+}
+
+need_binary() {
+    [[ -x "${BIN}" ]] || {
+        printf 'x-ui binary not found at %s\n' "${BIN}" >&2
+        exit 1
+    }
+}
+
+case "${1:-}" in
+    start)
+        systemctl start "${APP_NAME}"
+        ;;
+    stop)
+        systemctl stop "${APP_NAME}"
+        ;;
+    restart)
+        systemctl restart "${APP_NAME}"
+        ;;
+    restart-xray)
+        systemctl reload "${APP_NAME}"
+        ;;
+    status)
+        systemctl status "${APP_NAME}" -l
+        ;;
+    settings)
+        need_binary
+        "${BIN}" setting -show true
+        "${BIN}" uri
+        ;;
+    enable)
+        systemctl enable "${APP_NAME}"
+        ;;
+    disable)
+        systemctl disable "${APP_NAME}"
+        ;;
+    log)
+        journalctl -u "${APP_NAME}" -e --no-pager -f
+        ;;
+    version|-v|--version)
+        need_binary
+        "${BIN}" -v
+        ;;
+    ""|help|-h|--help)
+        usage
+        ;;
+    *)
+        printf 'Unknown command: %s\n\n' "$1" >&2
+        usage >&2
+        exit 2
+        ;;
+esac

@@ -1,0 +1,14 @@
+/tmp/
+/dist/
+*.log
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+*.db
+*.sqlite
+*.sqlite3
+config.json
+x-ui.db
